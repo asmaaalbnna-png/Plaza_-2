@@ -1,0 +1,290 @@
+     #include <Wire.h>
+     #include <Adafruit_PWMServoDriver.h>
+     #include <SoftwareSerial.h>
+
+SoftwareSerial bluetooth(3, 13);
+Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
+
+     //  Motors 
+     int R_IN1 = 8; int R_IN2 = 9; int R_IN3 = 10; int R_IN4 = 11;
+     int L_IN1 = 4; int L_IN2 = 7; int L_IN3 = 2; int L_IN4 = 12;
+
+     //  Ultrasonic 
+     int trigF = A0; int echoF = A1;
+     int trigR = A2; int echoR = A3;
+     int trigL = 5;  int echoL = 6;
+
+     int frontLimit = 13;
+     int R_L_limit = 9 ;
+
+     // Mode 
+     bool isAuto = false;
+     char cmd;
+
+     // Servo Channels 
+     #define SHOULDER_360_CH 0  
+     #define ELBOW_180_CH    1  
+     #define CLAW_180_CH     2  
+
+     #define SERVOMIN  100 
+     #define SERVOMAX  600 
+
+     //initial 
+     int shoulderPos = 120; 
+     int elbowPos    = 110; 
+     int clawPos     = 350;
+
+     // States 
+     bool isElbowUp = false;
+     bool isElbowDown = false;
+     bool isClawOpening = false;
+     bool isClawClosing = false;
+
+     bool isShoulderLeft = false;
+     bool isShoulderRight = false;
+
+
+void setup() {
+     Serial.begin(9600);
+     bluetooth.begin(9600);
+
+     pwm.begin();
+     pwm.setPWMFreq(60);
+
+     pinMode(R_IN1, OUTPUT); pinMode(R_IN2, OUTPUT);
+     pinMode(R_IN3, OUTPUT); pinMode(R_IN4, OUTPUT);
+     pinMode(L_IN1, OUTPUT); pinMode(L_IN2, OUTPUT);
+     pinMode(L_IN3, OUTPUT); pinMode(L_IN4, OUTPUT);
+
+     pinMode(trigF, OUTPUT); pinMode(echoF, INPUT);
+     pinMode(trigR, OUTPUT); pinMode(echoR, INPUT);
+     pinMode(trigL, OUTPUT); pinMode(echoL, INPUT);
+  
+     stopCar();
+
+  // initial points 
+     pwm.setPWM(SHOULDER_360_CH, 0, shoulderPos); 
+     pwm.setPWM(ELBOW_180_CH, 0, elbowPos);
+     pwm.setPWM(CLAW_180_CH, 0, clawPos);
+     }
+
+void loop() {
+if (bluetooth.available()) {
+    cmd = bluetooth.read();
+
+if (cmd == 'A') isAuto = true;
+if (cmd == 'M') { isAuto = false; stopCar(); }
+
+if (!isAuto) {
+      switch (cmd) {
+        // Car Controls
+      case 'F': moveForwardCar(); break;
+      case 'f': stopCar(); break;
+      case 'B': moveBackwardCar(); break;
+      case 'b': stopCar(); break;
+      case 'L': turnLeftCar(); break;
+      case 'l': stopCar(); break;
+      case 'R': turnRightCar(); break;
+      case 'r': stopCar(); break;
+
+        // Shoulder 
+      case 'G': isShoulderLeft = true; break;
+      case 'g': isShoulderLeft = false; break;
+      case 'H': isShoulderRight = true; break;
+      case 'h': isShoulderRight = false; break;
+
+        // Elbow
+     case 'T': isElbowUp = true; break;
+     case 't': isElbowUp = false; break;
+     case 'X': isElbowDown = true; break;
+     case 'x': isElbowDown = false; break;
+
+        // Claw
+     case 'C': isClawOpening = true; break;
+     case 'c': isClawOpening = false; break;
+     case 'Q': isClawClosing = true; break;
+     case 'q': isClawClosing = false; break;
+
+     case 'S': stopCar(); break;
+     }
+     }
+     }
+
+if (isAuto) {
+     runAutoMode();   
+     }
+
+     updateArmMotion(); 
+
+     delay(15);
+     }
+
+     //  ARM & SHOULDER MOTION 
+void updateArmMotion() {
+  
+if (isShoulderLeft) {
+     shoulderPos = constrain(shoulderPos + 8, SERVOMIN, SERVOMAX);
+     pwm.setPWM(SHOULDER_360_CH, 0, shoulderPos);
+     }
+if (isShoulderRight) {
+     shoulderPos = constrain(shoulderPos - 8, SERVOMIN, SERVOMAX);
+     pwm.setPWM(SHOULDER_360_CH, 0, shoulderPos);
+     }
+
+ 
+if (isElbowUp) {
+     elbowPos = constrain(elbowPos + 8, SERVOMIN, SERVOMAX);
+     pwm.setPWM(ELBOW_180_CH, 0, elbowPos);
+     }
+if (isElbowDown) {
+     elbowPos = constrain(elbowPos - 8, SERVOMIN, SERVOMAX);
+     pwm.setPWM(ELBOW_180_CH, 0, elbowPos);
+     }
+
+  
+if (isClawOpening) {
+     clawPos = constrain(clawPos + 15, SERVOMIN, SERVOMAX);
+     pwm.setPWM(CLAW_180_CH, 0, clawPos);
+     }
+if (isClawClosing) {
+     clawPos = constrain(clawPos - 15, SERVOMIN, SERVOMAX);
+     pwm.setPWM(CLAW_180_CH, 0, clawPos);
+     }
+     } 
+
+     // AUTO MODE 
+void runAutoMode() {
+     long front = readDistance(trigF, echoF);
+     
+if (front < frontLimit && front > 0) {
+   
+     Serial.println(  front);
+     stopCar();
+     delay(400);
+     long right = readDistance(trigR, echoR);
+     long left  = readDistance(trigL, echoL);
+if (right > R_L_limit) { 
+    
+   // Serial.println(right);
+     turnLeftSmall();
+     moveForwardShort();
+    }
+else if (left > R_L_limit)
+     {
+    // Serial.println(left);
+     turnRightSmall();
+     moveForwardShort(); 
+     }
+     stopCar();
+     delay(100);
+     } 
+else
+    {  
+     moveForwardCar();
+     }
+     }
+
+long readDistance(int trig, int echo) {
+     digitalWrite(trig, LOW);
+     delayMicroseconds(2);
+     digitalWrite(trig, HIGH); 
+     delayMicroseconds(10);
+     digitalWrite(trig, LOW);
+     long duration = pulseIn(echo, HIGH, 20000);
+     if (duration <= 0) return 999;
+     return duration * 0.034 / 2;
+     }
+
+   //  MOTORS 
+void moveForwardCar() {
+   digitalWrite(R_IN1, HIGH);
+   digitalWrite(R_IN2, LOW);
+   digitalWrite(R_IN3, HIGH); 
+   digitalWrite(R_IN4, LOW);
+   digitalWrite(L_IN1, HIGH);
+   digitalWrite(L_IN2, LOW);
+   digitalWrite(L_IN3, HIGH);
+   digitalWrite(L_IN4, LOW);
+  }
+void moveBackwardCar() {
+   digitalWrite(R_IN1, LOW);
+   digitalWrite(R_IN2, HIGH);
+   digitalWrite(R_IN3, LOW);
+    digitalWrite(R_IN4, HIGH);
+   digitalWrite(L_IN1, LOW); 
+   digitalWrite(L_IN2, HIGH);
+   digitalWrite(L_IN3, LOW); 
+   digitalWrite(L_IN4, HIGH);
+   }
+void turnRightCar() {
+   digitalWrite(R_IN1, LOW); 
+   digitalWrite(R_IN2, HIGH);
+   digitalWrite(R_IN3, LOW); 
+   digitalWrite(R_IN4, HIGH);
+   digitalWrite(L_IN1, HIGH);
+   digitalWrite(L_IN2, LOW);
+   digitalWrite(L_IN3, HIGH);
+   digitalWrite(L_IN4, LOW);
+   }
+void turnLeftCar() {
+   digitalWrite(R_IN1, HIGH);
+   digitalWrite(R_IN2, LOW);
+   digitalWrite(R_IN3, HIGH);
+   digitalWrite(R_IN4, LOW);
+   digitalWrite(L_IN1, LOW);
+   digitalWrite(L_IN2, HIGH);
+   digitalWrite(L_IN3, LOW); 
+   digitalWrite(L_IN4, HIGH);
+   }
+void stopCar() {
+   digitalWrite(R_IN1, LOW); 
+   digitalWrite(R_IN2, LOW);
+   digitalWrite(R_IN3, LOW);
+   digitalWrite(R_IN4, LOW);
+   digitalWrite(L_IN1, LOW);
+   digitalWrite(L_IN2, LOW);
+   digitalWrite(L_IN3, LOW); 
+   digitalWrite(L_IN4, LOW);
+   }
+void turnLeftSmall() {
+   digitalWrite(R_IN1, HIGH);
+   digitalWrite(R_IN2, LOW);
+   digitalWrite(R_IN3, HIGH);
+   digitalWrite(R_IN4, LOW);
+
+   digitalWrite(L_IN1, LOW);  
+   digitalWrite(L_IN2, HIGH);
+   digitalWrite(L_IN3, LOW); 
+   digitalWrite(L_IN4, HIGH);
+   delay(610);
+   stopCar();
+   }
+void turnRightSmall() {
+   digitalWrite(L_IN1, HIGH);  
+   digitalWrite(L_IN2, LOW);
+   digitalWrite(L_IN3, HIGH); 
+   digitalWrite(L_IN4, LOW);
+  
+   digitalWrite(R_IN1, LOW);
+   digitalWrite(R_IN2, HIGH);
+   digitalWrite(R_IN3, LOW);
+   digitalWrite(R_IN4, HIGH);
+   delay(610);
+   stopCar();
+   }
+void moveForwardShort() 
+   {
+   moveForwardCar();
+   delay(200); 
+   stopCar();
+ delay(230); 
+  }
+
+
+
+
+
+
+
+
+
